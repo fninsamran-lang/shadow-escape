@@ -1,0 +1,6 @@
+{
+  "name": "Shadow Escape",
+  "description": "เกมแนวลอบหนี (Stealth Game) หลบยามรักษาความปลอดภัย เก็บกุญแจ และหนีออกจากอาคารก่อนเวลาหมด",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
