@@ -26,9 +26,10 @@ POINT = {"XAUUSD": 1000, "XAGUSD": 1000, "USDJPY": 1000, "EURUSD": 100000, "GBPU
 UA = {"User-Agent": "Mozilla/5.0"}
 
 
-def fetch(url: str, delay: float) -> bytes:
+def fetch(url: str, delay: float, tries: int = 4) -> bytes | None:
+    """Returns bytes ('' for no data), or None if it kept failing (caller skips, not cached)."""
     wait = delay
-    for attempt in range(8):
+    for attempt in range(tries):
         try:
             req = urllib.request.Request(url, headers=UA)
             with urllib.request.urlopen(req, timeout=60) as r:
@@ -39,14 +40,14 @@ def fetch(url: str, delay: float) -> bytes:
             if e.code == 404:
                 time.sleep(delay)
                 return b""
-            if e.code != 429 and e.code < 500:
-                raise
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
-            pass
-        wait = min(wait * 2 + 5, 120)
-        print(f"  retry {attempt + 1} in {wait:.0f}s: {url}", flush=True)
+            err = f"HTTP {e.code}"
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            err = type(e).__name__ + ": " + str(e)[:80]
+        wait = min(wait * 2 + 5, 60)
+        print(f"  retry {attempt + 1} in {wait:.0f}s ({err}): {url}", flush=True)
         time.sleep(wait)
-    raise RuntimeError(f"failed: {url}")
+    print(f"  SKIP (will retry on next run): {url}", flush=True)
+    return None
 
 
 def decode(raw: bytes, day: date, point: int) -> pd.DataFrame:
@@ -95,7 +96,9 @@ def main() -> None:
                 cache = raw_dir / f"{d.isoformat()}_{side}.bi5"
                 if not cache.exists():
                     url = f"{BASE}/{sym}/{d.year}/{d.month - 1:02d}/{d.day:02d}/{side}_candles_min_1.bi5"
-                    cache.write_bytes(fetch(url, a.delay))
+                    data = fetch(url, a.delay)
+                    if data is not None:
+                        cache.write_bytes(data)
             if i % 10 == 0:
                 print(f"{i + 1}/{len(todo)} {d}", flush=True)
 
