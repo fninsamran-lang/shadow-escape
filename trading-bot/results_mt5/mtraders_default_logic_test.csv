@@ -1,0 +1,9 @@
+strategy,cost,trades,win%,PF,avgR,totR,maxDD_R,1st-half PF,2nd-half PF
+PineTunnel: EMA 12/26 cross,normal cost,662,37.2,1.0,-0.001,-0.6,33.3,1.01,0.99
+PineTunnel: EMA 12/26 cross,high cost,662,37.2,0.96,-0.023,-15.0,38.5,0.96,0.96
+PineTunnel: RSI 55/45 momentum,normal cost,1074,36.1,0.95,-0.029,-31.7,66.3,0.93,0.98
+PineTunnel: RSI 55/45 momentum,high cost,1074,36.0,0.92,-0.051,-54.9,84.4,0.89,0.95
+PineTunnel: Supertrend ATR14x2,normal cost,893,36.3,0.96,-0.026,-23.3,41.5,0.95,0.96
+PineTunnel: Supertrend ATR14x2,high cost,893,36.2,0.93,-0.048,-42.6,55.6,0.91,0.94
+TPO: VA breakout (prev session),normal cost,384,37.0,1.01,0.003,1.3,22.0,1.13,0.9
+TPO: VA breakout (prev session),high cost,384,37.0,0.97,-0.019,-7.3,23.7,1.08,0.88
