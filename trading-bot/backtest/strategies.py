@@ -85,7 +85,7 @@ def trend_pullback(f: Features, htf=200, fast=20, slow=50, look=5, sl_atr=1.5, t
 
 
 # ---------------------------------------------------------------- 2. Asian range breakout
-def asian_breakout(f: Features, range_end=7, trade_until=12, sl_atr=1.5, tp_r=2.0, exit_hour=20, max_rng_atr=8.0, side="both"):
+def asian_breakout(f: Features, range_end=7, trade_until=12, sl_atr=1.5, tp_r=2.0, exit_hour=20, max_rng_atr=8.0, side="both", htf_align=0):
     df = f.df
     h = f.hour
     in_rng = h < range_end
@@ -101,6 +101,10 @@ def asian_breakout(f: Features, range_end=7, trade_until=12, sl_atr=1.5, tp_r=2.
     # only the first breakout per day per direction
     first_long = long_raw & ~pd.Series(long_raw, index=df.index).groupby(key).cumsum().shift(1, fill_value=0).astype(bool).values
     first_short = short_raw & ~pd.Series(short_raw, index=df.index).groupby(key).cumsum().shift(1, fill_value=0).astype(bool).values
+    if htf_align:  # only trade in the direction of the H1 EMA(htf_align) trend
+        H = f.htf_ema("1h", htf_align)
+        first_long = first_long & (c > H)
+        first_short = first_short & (c < H)
     sig = np.where(first_long, 1, np.where(first_short, -1, 0))
     sig = _side(sig, side)
     force = (h >= exit_hour) | f.weekend_exit()
