@@ -1,0 +1,6 @@
+strategy,combos,IS_profitable%,OOS_profitable%,both_profitable%,median_IS_avgR,median_OOS_avgR
+asian_breakout,96.0,38.5,89.6,36.5,-0.02,0.132
+bb_reversion,384.0,20.6,83.6,18.2,-0.068,0.128
+donchian_trend,144.0,63.2,34.7,24.3,0.021,-0.015
+ema_cross_adx,192.0,22.4,31.2,7.8,-0.122,-0.058
+trend_pullback,128.0,80.5,35.2,31.2,0.054,-0.027
