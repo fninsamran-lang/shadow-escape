@@ -62,6 +62,9 @@ input string InpCalendarCurrency = "USD";
 input int    InpCalMinutesBefore = 30;
 input int    InpCalMinutesAfter  = 30;
 
+input group "Signal log (recommended for judging the AI filter later)"
+input bool   InpLogSignals       = true;   // append every signal, taken or skipped, to signals_log.csv (common Files)
+
 input group "Optional: external news gate file (future AI service)"
 input bool   InpUseGateFile      = false;  // if true: no valid gate file -> NO new entries
 input string InpGateFile         = "news_gate.txt"; // in the common Files folder
@@ -216,11 +219,13 @@ bool NewsBlackout()
 // Gate file (written by an external service), simple key=value lines, e.g.
 //   decision=approve        (approve | reduce | reject)
 //   size=0.5                (lot multiplier, used when decision=reduce)
+//   allow_buy=1             (optional, 0 blocks buys)
+//   allow_sell=1            (optional, 0 blocks sells)
 //   valid_until_utc=1764250000   (unix seconds)
 // returns false = do not trade. sizeMult is set to the lot multiplier.
-bool GateAllows(double &sizeMult)
+bool GateAllows(double &sizeMult, bool &allowBuy, bool &allowSell)
   {
-   sizeMult = 1.0;
+   sizeMult = 1.0; allowBuy = true; allowSell = true;
    if(!InpUseGateFile) return true;
    int h = FileOpen(InpGateFile, FILE_READ | FILE_TXT | FILE_ANSI | FILE_COMMON);
    if(h == INVALID_HANDLE) { Print("Gate: file missing -> no entry"); return false; }
@@ -237,6 +242,8 @@ bool GateAllows(double &sizeMult)
       StringToLower(k);
       if(k == "decision") { StringToLower(v); decision = v; }
       else if(k == "size") size = StringToDouble(v);
+      else if(k == "allow_buy")  allowBuy  = (StringToInteger(v) != 0);
+      else if(k == "allow_sell") allowSell = (StringToInteger(v) != 0);
       else if(k == "valid_until_utc") validUntil = StringToInteger(v);
      }
    FileClose(h);
@@ -331,6 +338,22 @@ int Signal(double &atrOut)
    return 0;
   }
 
+// one line per candidate signal: taken, or skipped with the reason
+void LogSignal(const string status, const int sig, const double refPrice,
+               const double slDist, const double tpDist, const double sizeMult)
+  {
+   if(!InpLogSignals) return;
+   int h = FileOpen("signals_log.csv", FILE_READ | FILE_WRITE | FILE_TXT | FILE_ANSI | FILE_COMMON);
+   if(h == INVALID_HANDLE) return;
+   if(FileSize(h) == 0)
+      FileWriteString(h, "signal_bar_utc,symbol,side,ref_price,sl_dist,tp_dist,status,size_mult\r\n");
+   FileSeek(h, 0, SEEK_END);
+   string t = TimeToString(ServerToUtc(iTime(_Symbol, PERIOD_M15, 1)), TIME_DATE | TIME_MINUTES);
+   FileWriteString(h, StringFormat("%s,%s,%s,%.2f,%.2f,%.2f,%s,%.2f\r\n", t, _Symbol,
+                   sig > 0 ? "buy" : "sell", refPrice, slDist, tpDist, status, sizeMult));
+   FileClose(h);
+  }
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
@@ -386,36 +409,47 @@ void OnTick()
    int sig = Signal(atr);
    if(sig == 0 || atr <= 0.0) return;
 
-   // guards
+   // candidate signal: compute the levels first so every skipped signal can be logged and judged later
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK), bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   if(ask - bid > InpMaxSpreadPrice) { PrintFormat("Skip: spread %.2f > max %.2f", ask - bid, InpMaxSpreadPrice); return; }
-   if(DrawdownHalted()) { Print("Halted: equity drawdown limit reached (delete global var ", g_peakKey, " to reset)"); return; }
-   if(g_dailyLossPct > 0.0 &&
-      TodayPnl() <= -AccountInfoDouble(ACCOUNT_EQUITY) * g_dailyLossPct / 100.0)
-     { Print("Skip: daily loss limit reached"); return; }
-   if(NewsBlackout()) return;
-   double sizeMult = 1.0;
-   if(!GateAllows(sizeMult)) return;
-
-   // order
    double slDist = InpSlAtrMult * atr;
    double tpDist = slDist * InpTpR;
+   double refPrice = (sig > 0) ? ask : bid;
+   double sizeMult = 1.0;
+   bool   allowBuy = true, allowSell = true;
+   string skip = "";
+   if(ask - bid > InpMaxSpreadPrice)                         skip = "spread";
+   else if(DrawdownHalted())                                 skip = "drawdown_halt";
+   else if(g_dailyLossPct > 0.0 &&
+           TodayPnl() <= -AccountInfoDouble(ACCOUNT_EQUITY) * g_dailyLossPct / 100.0) skip = "daily_loss";
+   else if(NewsBlackout())                                   skip = "news_blackout";
+   else if(!GateAllows(sizeMult, allowBuy, allowSell))       skip = "gate_blocked";
+   else if((sig > 0 && !allowBuy) || (sig < 0 && !allowSell)) skip = "gate_direction";
+   if(skip != "")
+     {
+      PrintFormat("Skip signal (%s)", skip);
+      LogSignal(skip, sig, refPrice, slDist, tpDist, sizeMult);
+      return;
+     }
+
+   // order
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
-   if(slDist < stopsLevel) { Print("Skip: SL distance below broker stop level"); return; }
+   if(slDist < stopsLevel)
+     { Print("Skip: SL distance below broker stop level"); LogSignal("stops_level", sig, refPrice, slDist, tpDist, sizeMult); return; }
 
    if(sig > 0)
      {
       double lots = CalcLots(ORDER_TYPE_BUY, ask, slDist, sizeMult);
-      if(lots <= 0.0) return;
+      if(lots <= 0.0) { LogSignal("lot_too_small", sig, refPrice, slDist, tpDist, sizeMult); return; }
       g_trade.Buy(lots, _Symbol, ask, NormalizeDouble(ask - slDist, digits), NormalizeDouble(ask + tpDist, digits), "asian-h1trend");
      }
    else
      {
       double lots = CalcLots(ORDER_TYPE_SELL, bid, slDist, sizeMult);
-      if(lots <= 0.0) return;
+      if(lots <= 0.0) { LogSignal("lot_too_small", sig, refPrice, slDist, tpDist, sizeMult); return; }
       g_trade.Sell(lots, _Symbol, bid, NormalizeDouble(bid + slDist, digits), NormalizeDouble(bid - tpDist, digits), "asian-h1trend");
      }
    PrintFormat("Order sent: %s lots/SL/TP result=%d", sig > 0 ? "BUY" : "SELL", g_trade.ResultRetcode());
+   LogSignal("taken", sig, refPrice, slDist, tpDist, sizeMult);
   }
 //+------------------------------------------------------------------+

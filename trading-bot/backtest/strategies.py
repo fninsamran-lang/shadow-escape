@@ -111,6 +111,27 @@ def asian_breakout(f: Features, range_end=7, trade_until=12, sl_atr=1.5, tp_r=2.
     return sig, sl_atr * a, tp_r, 10_000, force
 
 
+# ---------------------------------------------------------------- 2b. generic session-range breakout
+def session_breakout(f: Features, range_start=7, range_end=12, trade_until=16, sl_atr=2.0, tp_r=3.0, exit_hour=20, htf_align=200, side="both"):
+    """Range = bars opening in [range_start, range_end) UTC; trade the first close beyond it before trade_until."""
+    df = f.df
+    h = f.hour
+    in_rng = (h >= range_start) & (h < range_end)
+    key = f.date
+    hi = pd.Series(np.where(in_rng, df["high"].values, np.nan), index=df.index).groupby(key).transform("max").values
+    lo = pd.Series(np.where(in_rng, df["low"].values, np.nan), index=df.index).groupby(key).transform("min").values
+    c = df["close"].values
+    window = (h >= range_end) & (h < trade_until)
+    long_raw, short_raw = window & (c > hi), window & (c < lo)
+    first_long = long_raw & ~pd.Series(long_raw, index=df.index).groupby(key).cumsum().shift(1, fill_value=0).astype(bool).values
+    first_short = short_raw & ~pd.Series(short_raw, index=df.index).groupby(key).cumsum().shift(1, fill_value=0).astype(bool).values
+    if htf_align:
+        H = f.htf_ema("1h", htf_align)
+        first_long, first_short = first_long & (c > H), first_short & (c < H)
+    sig = _side(np.where(first_long, 1, np.where(first_short, -1, 0)), side)
+    return sig, sl_atr * f.atr(), tp_r, 10_000, (h >= exit_hour) | f.weekend_exit()
+
+
 # ---------------------------------------------------------------- 3. Bollinger mean reversion
 def bb_reversion(f: Features, n=20, k=2.0, rsi_lo=30, adx_max=20, sl_atr=1.5, tp_r=1.0, max_bars=16, sess="all", side="both"):
     c = f.df["close"].values

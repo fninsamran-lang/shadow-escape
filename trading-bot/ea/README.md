@@ -29,6 +29,26 @@ deeper drawdown. The longest losing streak was 8 trades (=8R). High mode lost 27
 Drawdown halt stays on until you delete the terminal global variable named in the Experts log.
 Small accounts: risk% below the broker's minimum lot makes the EA skip the trade, so use a cent/micro account.
 
+## Trade frequency (tested in `../backtest/test_frequency.py`)
+| Setting | Trades/month | PF | avgR | Max DD | Profitable folds |
+|---|---|---|---|---|---|
+| H1 EMA200 (default) | 11.6 | 1.53 | +0.32 | 15R | 4/4 |
+| **H1 EMA100** | 12.9 | 1.50 | +0.31 | 14R | 4/4 |
+| **H1 EMA50** (`InpHtfEmaPeriod = 50`) | 15.0 | 1.49 | +0.31 | 13R | 4/4 |
+| no trend filter | 18.7 | 1.39 | +0.24 | 17R | 3/4 |
+| EMA50, window to 17:00 UTC | 18.5 | 1.39 | +0.23 | 17R | 4/4 |
+
+Wider windows and no filter add trades but cost quality. A second setup (London-morning range broken in the NY session)
+was tested and has **no edge** (PF ~1.0), so it is not included. No code change is needed for more trades: set
+`InpHtfEmaPeriod = 50`.
+
+## Signal log and AI gate
+- `signals_log.csv` (common Files folder) gets one line per candidate signal: `taken` or the skip reason
+  (`spread`, `drawdown_halt`, `daily_loss`, `news_blackout`, `gate_blocked`, `gate_direction`, `lot_too_small`, `stops_level`).
+  Skipped signals are exactly what lets you measure later whether the AI filter helped: replay them on the price data and
+  compare their outcome with the taken ones.
+- `news_gate.txt` can also set `allow_buy=0` / `allow_sell=0` to block one direction only.
+
 ## Before using it
 1. **Compile** in MetaEditor (F7). The code was written without a compiler, so fix any error it reports.
 2. **Check broker time**: `InpServerOffsetWinter` = 2 and `InpServerUsesUsDst` = true fit brokers whose weekly open is
