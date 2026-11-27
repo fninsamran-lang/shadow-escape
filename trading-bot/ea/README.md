@@ -10,9 +10,24 @@ Expect roughly **+0.18R per trade** after costs, ~11 trades/month, drawdowns of 
 | Signal | First M15 close beyond the range, bar open 06:00-13:45, once per direction per day |
 | Filter | Buy only above H1 EMA(200), sell only below |
 | Exit | SL 2.0 x ATR(14), TP 3R, any open trade closed from 20:00 |
-| Size | `InpRiskPercent` of equity per trade (default 0.5%) |
+| Size | Risk % of equity per trade, set by the risk mode (default Medium = 1%) |
 
 Safety: max-spread guard, daily-loss stop, equity-drawdown halt, one position at a time, no martingale/grid.
+
+## Risk modes (`InpRiskMode`)
+Entry/exit rules are identical in every mode; only money management differs.
+
+| Mode | Risk/trade | Daily stop | Halt at drawdown | Backtest 18m* | Max DD* | Worst month* |
+|---|---|---|---|---|---|---|
+| Low | 0.5% | 1.5% | 10% | +38% | 7% | -1.4% |
+| **Medium** (default) | 1.0% | 3% | 20% | +88% | 14% | -2.9% |
+| High | 2.0% | 5% | 35% | +232% | 27% | -5.7% |
+| Custom | `InpRiskPercent` | `InpDailyLossPct` | `InpMaxDrawdownPct` | | | |
+
+\* From the same data the strategy was developed on, so treat as a best case: expect roughly half the return and a
+deeper drawdown. The longest losing streak was 8 trades (=8R). High mode lost 27% at its worst point.
+Drawdown halt stays on until you delete the terminal global variable named in the Experts log.
+Small accounts: risk% below the broker's minimum lot makes the EA skip the trade, so use a cent/micro account.
 
 ## Before using it
 1. **Compile** in MetaEditor (F7). The code was written without a compiler, so fix any error it reports.

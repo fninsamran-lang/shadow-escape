@@ -25,6 +25,14 @@
 
 #include <Trade/Trade.mqh>
 
+enum ENUM_RISK_MODE
+  {
+   RISK_LOW    = 0,   // Low:    0.5% per trade, daily stop 1.5%, halt at 10% drawdown
+   RISK_MEDIUM = 1,   // Medium: 1.0% per trade, daily stop 3%,   halt at 20% drawdown
+   RISK_HIGH   = 2,   // High:   2.0% per trade, daily stop 5%,   halt at 35% drawdown
+   RISK_CUSTOM = 3    // Custom: use the three values below
+  };
+
 //--- strategy
 input group "Strategy (UTC hours)"
 input int    InpRangeEndUTC      = 6;      // range = bars opening before this hour (00:00..)
@@ -39,11 +47,12 @@ input group "Broker time"
 input int    InpServerOffsetWinter = 2;    // server GMT offset in winter (GMT+2 -> 2)
 input bool   InpServerUsesUsDst    = true; // server adds +1h during US daylight saving time
 
-input group "Risk"
-input double InpRiskPercent      = 0.5;    // risk per trade, % of equity
+input group "Risk (entry rules are identical in every mode; only money management changes)"
+input ENUM_RISK_MODE InpRiskMode = RISK_MEDIUM; // risk mode
+input double InpRiskPercent      = 1.0;    // CUSTOM only: risk per trade, % of equity
+input double InpDailyLossPct     = 3.0;    // CUSTOM only: stop new entries after this % loss today (0 = off)
+input double InpMaxDrawdownPct   = 20.0;   // CUSTOM only: halt new entries at this % equity drawdown (0 = off)
 input double InpMaxSpreadPrice   = 0.50;   // skip entries if spread (price units, $) is wider
-input double InpDailyLossPct     = 2.0;    // stop new entries after this % loss today (0 = off)
-input double InpMaxDrawdownPct   = 15.0;   // halt new entries at this % equity drawdown (0 = off)
 input int    InpDeviationPoints  = 30;     // max slippage in points
 input long   InpMagic            = 150615; // magic number
 
@@ -63,6 +72,7 @@ int      g_emaHandle  = INVALID_HANDLE;
 datetime g_lastBar    = 0;
 string   g_peakKey;
 bool     g_calWarned  = false;
+double   g_riskPct = 1.0, g_dailyLossPct = 3.0, g_ddHaltPct = 20.0;   // effective values for the chosen mode
 
 //+------------------------------------------------------------------+
 //| time helpers                                                      |
@@ -172,10 +182,10 @@ void UpdatePeak()
 
 bool DrawdownHalted()
   {
-   if(InpMaxDrawdownPct <= 0.0) return false;
+   if(g_ddHaltPct <= 0.0) return false;
    double eq = AccountInfoDouble(ACCOUNT_EQUITY);
    double peak = GlobalVariableCheck(g_peakKey) ? GlobalVariableGet(g_peakKey) : eq;
-   return ((peak - eq) / peak * 100.0 >= InpMaxDrawdownPct);
+   return ((peak - eq) / peak * 100.0 >= g_ddHaltPct);
   }
 
 bool NewsBlackout()
@@ -241,7 +251,7 @@ bool GateAllows(double &sizeMult)
 double CalcLots(const ENUM_ORDER_TYPE type, const double price, const double slDistance, const double mult)
   {
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   double riskMoney = equity * InpRiskPercent / 100.0 * mult;
+   double riskMoney = equity * g_riskPct / 100.0 * mult;
    double slPrice = (type == ORDER_TYPE_BUY) ? price - slDistance : price + slDistance;
    double profit = 0.0;
    if(!OrderCalcProfit(type, _Symbol, 1.0, price, slPrice, profit) || profit >= 0.0)
@@ -328,6 +338,17 @@ int OnInit()
    g_emaHandle = iMA(_Symbol, PERIOD_H1, InpHtfEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    if(g_atrHandle == INVALID_HANDLE || g_emaHandle == INVALID_HANDLE)
      { Print("Indicator handle failed"); return INIT_FAILED; }
+   switch(InpRiskMode)
+     {
+      case RISK_LOW:    g_riskPct = 0.5; g_dailyLossPct = 1.5; g_ddHaltPct = 10.0; break;
+      case RISK_MEDIUM: g_riskPct = 1.0; g_dailyLossPct = 3.0; g_ddHaltPct = 20.0; break;
+      case RISK_HIGH:   g_riskPct = 2.0; g_dailyLossPct = 5.0; g_ddHaltPct = 35.0; break;
+      default:          g_riskPct = InpRiskPercent; g_dailyLossPct = InpDailyLossPct; g_ddHaltPct = InpMaxDrawdownPct; break;
+     }
+   if(g_riskPct <= 0.0 || g_riskPct > 5.0)
+     { Print("Risk per trade must be between 0 and 5 %"); return INIT_PARAMETERS_INCORRECT; }
+   PrintFormat("Risk mode: %s | risk/trade %.2f%% | daily stop %.1f%% | drawdown halt %.1f%%",
+               EnumToString(InpRiskMode), g_riskPct, g_dailyLossPct, g_ddHaltPct);
    g_trade.SetExpertMagicNumber(InpMagic);
    g_trade.SetDeviationInPoints(InpDeviationPoints);
    g_trade.SetTypeFillingBySymbol(_Symbol);
@@ -369,8 +390,8 @@ void OnTick()
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK), bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    if(ask - bid > InpMaxSpreadPrice) { PrintFormat("Skip: spread %.2f > max %.2f", ask - bid, InpMaxSpreadPrice); return; }
    if(DrawdownHalted()) { Print("Halted: equity drawdown limit reached (delete global var ", g_peakKey, " to reset)"); return; }
-   if(InpDailyLossPct > 0.0 &&
-      TodayPnl() <= -AccountInfoDouble(ACCOUNT_EQUITY) * InpDailyLossPct / 100.0)
+   if(g_dailyLossPct > 0.0 &&
+      TodayPnl() <= -AccountInfoDouble(ACCOUNT_EQUITY) * g_dailyLossPct / 100.0)
      { Print("Skip: daily loss limit reached"); return; }
    if(NewsBlackout()) return;
    double sizeMult = 1.0;
