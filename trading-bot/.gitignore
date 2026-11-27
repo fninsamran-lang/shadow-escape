@@ -1,3 +1,4 @@
 data/raw/
 *.parquet
 __pycache__/
+data_2022/raw/
