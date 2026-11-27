@@ -1,0 +1,6 @@
+anthropic>=2.14
+pydantic>=2
+defusedxml>=0.7
+numpy
+pandas
+pytest

@@ -1,0 +1,20 @@
+# Copy to config.toml and edit. API key: set ANTHROPIC_API_KEY in the environment (never put it in this file).
+
+mode = "shadow"            # shadow = log only (EA InpUseGateFile=false) | live = EA obeys the gate (InpUseGateFile=true)
+model = "claude-opus-5-5"  # claude-sonnet-5-5 or claude-haiku-5-5 are cheaper
+effort = "medium"          # low | medium | high
+interval_min = 15
+validity_min = 35          # gate expires after this; a dead service then blocks new entries in live mode
+active_hours_utc = [5, 14] # calls the API only while the EA can open trades (Mon-Fri)
+on_ai_error = "approve"    # live mode, Claude unreachable: approve (rules only) | block
+
+calendar_block = true      # reject +-30 min around high-impact USD news (no AI involved)
+calendar_currencies = ["USD"]
+calendar_before_min = 30
+calendar_after_min = 30
+
+gate_folder = ""           # empty = %APPDATA%\MetaQuotes\Terminal\Common\Files
+log_file = "logs/verdicts.jsonl"
+
+google_news_queries = ["gold price", "XAUUSD", "Federal Reserve", "US dollar", "geopolitical risk markets"]
+extra_feeds = []           # more RSS/Atom URLs

@@ -1,0 +1,5 @@
+logs/
+config.toml
+mt5_common_files/
+__pycache__/
+.pytest_cache/
